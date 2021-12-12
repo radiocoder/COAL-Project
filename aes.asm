@@ -44,10 +44,15 @@ BYTE 0a0h, 0e0h, 3bh, 4dh, 0aeh, 2ah, 0f5h, 0b0h, 0c8h, 0ebh, 0bbh, 3ch, 83h, 53
 BYTE 17h, 2bh, 04h, 7eh, 0bah, 77h, 0d6h, 26h, 0e1h, 69h, 14h, 63h, 55h, 21h, 0ch, 7dh
 ; ---------------------------
 
+Rconstant BYTE 01h, 02h, 04h, 08h, 10h, 20h, 40h, 80h, 1bh, 36h
 
+key BYTE 2bh, 7eh, 15h, 16h, 28h, 0aeh, 0d2h, 0a6h, 0abh, 0f7h, 15h, 88h, 09h, 0cfh, 4fh, 3ch
+roundkeys BYTE 176 dup(0)
+temp BYTE 4 dup(0)
 
 state_matrix BYTE 87h, 0f2h, 4dh, 97h, 6eh, 4ch, 90h, 0ech, 46h, 0e7h, 4ah, 0c3h, 0a6h, 08ch, 0d8h, 95h
 temp_state_matrix BYTE 16 dup(0)
+
 
 .code
 ; ---------------------------
@@ -55,14 +60,134 @@ main PROC
 ;
 ; Main function that calls other functions
 ; ---------------------------
-call dumpregs
-call mix_columns
-mov esi, OFFSET SUB_BOX
-mov ecx, 256
-mov ebx, TYPE SUB_BOX
+call key_expansion
+mov esi, OFFSET roundkeys
+mov ecx, 176
+mov ebx, 1 ; TYPE temp_state_matrix
 call Dumpmem
 exit
 main ENDP
+
+
+
+; ---------------------------
+key_expansion PROC
+;
+; Key Scheduler that expands the 16 byte key to 176 byte key
+; Receives: nothing
+; Returns: nothing
+; ---------------------------
+mov edi, OFFSET roundkeys
+mov esi, OFFSET key
+mov ecx, 16
+first_16:
+	mov bl, [esi]
+	mov [edi], bl
+	inc esi
+	inc edi
+	Loop first_16
+
+push edi
+sub edi, 4
+mov esi, edi ; esi = last4bytes
+pop edi
+mov edx, 0
+mov eax, 0
+rounds:
+	cmp edx, 11
+	jae end_key_expansion
+	mov ecx, OFFSET SUB_BOX
+	push ebx
+	push edi
+	mov edi, OFFSET temp
+	mov al, [esi]
+	inc esi
+	mov bl, [ecx + eax]
+	mov [edi + 3], bl  ; temp[3] = SBOX[*last4bytes++];
+	mov al, [esi]
+	inc esi
+	mov bl, [ecx + eax]
+	mov [edi], bl ; temp[0] = SBOX[*last4bytes++];
+	mov al, [esi]
+	inc esi
+	mov bl, [ecx + eax]
+	mov [edi + 1], bl
+	mov al, [esi]
+	inc esi
+	mov bl, [ecx + eax]
+	mov [edi + 2], bl
+	mov ecx, OFFSET Rconstant
+	mov bl, [ecx + edx] ; mov ebx, Rc[i]
+	xor [edi], bl
+	pop edi
+	pop ebx
+	
+	push edi
+	;sub edi, 4  
+	;mov esi, edi ; esi = last4bytes
+	sub edi, 16
+	mov ebx, edi
+	pop edi
+
+
+	push esi ; to store the temp address
+	mov esi, OFFSET temp
+
+	mov cl, [ebx] ; *roundkeys++ = temp[0] ^ *lastround++;
+	xor [esi], cl
+	mov cl, [esi]
+	mov [edi], cl
+	inc ebx
+	inc edi
+
+	mov cl, [ebx] ; *roundkeys++ = temp[1] ^ *lastround++;
+	xor [esi+1], cl
+	mov cl, [esi+1]
+	mov [edi], cl
+	inc ebx
+	inc edi
+
+	mov cl, [ebx] ; *roundkeys++ = temp[2] ^ *lastround++;
+	xor [esi+2], cl
+	mov cl, [esi+2]
+	mov [edi], cl
+	inc ebx
+	inc edi
+
+	mov cl, [ebx] ; *roundkeys++ = temp[3] ^ *lastround++;
+	xor [esi+3], cl
+	mov cl, [esi+3]
+	mov [edi], cl
+	inc ebx
+	inc edi
+
+	pop esi
+
+	; k4-k7 for next round
+	; ebx = lastround
+	; esi = last4bytes
+	; edi = roundkeys
+
+mov ecx, 12
+expand_loop:
+	push ecx
+	mov cl, [ebx] ; *roundkeys++ = *last4bytes++ ^ *lastround++;
+	mov ch, [esi]
+	xor cl, ch
+	mov [edi], cl
+	inc esi
+	inc ebx
+	inc edi
+	pop ecx
+	Loop expand_loop
+
+
+	inc edx ; increment counter
+	jmp rounds
+end_key_expansion:
+call dumpregs
+ret
+key_expansion ENDP
 
 
 ; ---------------------------
@@ -176,28 +301,30 @@ mix_columns ENDP
 ; ---------------------------
 gmul PROC
 ; Computes the finite field multiplication of two numbers in GF(2^8)
+; Using the Russian Peasant Multiplication Algorithm
 ; Receives: BL, CL
 ; Returns: AL = Product
+; ---------------------------
 mov al, 0
 gmul_while:
-cmp bl, 0
-jz end_gmul
-cmp cl, 0
-jz end_gmul
-test cl, 01h
-jz skip_if
-xor al, bl
-skip_if:
-test bl, 80h
-jz skip_if2
-shl bl, 1
-xor bl, 1bh
-jmp shift_cl
-skip_if2:
-shl bl, 1
-shift_cl:
-shr cl, 1
-jmp gmul_while
+	cmp bl, 0
+	jz end_gmul  ; end while
+	cmp cl, 0
+	jz end_gmul  ; end while
+	test cl, 01h
+	jz skip_if
+	xor al, bl
+	skip_if:
+	test bl, 80h
+	jz skip_if2
+	shl bl, 1
+	xor bl, 1bh
+	jmp shift_cl
+	skip_if2:
+	shl bl, 1
+	shift_cl:
+	shr cl, 1
+	jmp gmul_while
 end_gmul:
 ret
 gmul ENDP
