@@ -60,9 +60,18 @@ main PROC
 ;
 ; Main function that calls other functions
 ; ---------------------------
-call key_expansion
-mov esi, OFFSET roundkeys
-mov ecx, 176
+mov esi, OFFSET state_matrix
+mov ecx, 16
+mov ebx, 1 ; TYPE temp_state_matrix
+call Dumpmem
+call shift_rows
+mov esi, OFFSET state_matrix
+mov ecx, 16
+mov ebx, 1 ; TYPE temp_state_matrix
+call Dumpmem
+call inv_shift_rows
+mov esi, OFFSET state_matrix
+mov ecx, 16
 mov ebx, 1 ; TYPE temp_state_matrix
 call Dumpmem
 exit
@@ -190,6 +199,160 @@ ret
 key_expansion ENDP
 
 
+
+; ---------------------------
+sub_bytes PROC
+; 
+; Substitute the block bytes to the predefined bytes table
+; receives: nothing
+; Returns: nothing
+; ---------------------------
+mov esi, OFFSET state_matrix
+mov edi, OFFSET SUB_BOX
+mov ebx, 0
+mov ecx, 16
+sub_bytes_loop:
+	mov bl, [esi]
+	mov al, [edi + ebx]
+	mov [esi], al
+	inc esi
+	Loop sub_bytes_loop
+ret
+sub_bytes ENDP
+
+
+; ---------------------------
+inv_sub_bytes PROC
+; 
+; Substitute the block bytes to the predefined bytes table
+; receives: nothing
+; Returns: nothing
+; ---------------------------
+mov esi, OFFSET state_matrix
+mov edi, OFFSET INV_SUB_BOX
+mov ebx, 0
+mov ecx, 16
+inv_sub_bytes_loop:
+	mov bl, [esi]
+	mov al, [edi + ebx]
+	mov [esi], al
+	inc esi
+	Loop inv_sub_bytes_loop
+ret
+ret
+inv_sub_bytes ENDP
+
+
+
+
+
+;Row0: s0  s4  s8  s12   <<< 0 byte
+;Row1: s1  s5  s9  s13   <<< 1 byte
+;Row2: s2  s6  s10 s14   <<< 2 bytes
+;Row3: s3  s7  s11 s15   <<< 3 bytes
+; ---------------------------
+shift_rows PROC USES ESI EBX
+;
+; Shift rows of the state matrix
+; Receives: nothing
+; Returns: nothing
+; ---------------------------
+
+mov esi, OFFSET state_matrix
+
+; row 1 (starting from row 0)
+mov bl, [esi + 1]
+xchg [esi + 5], bl
+mov [esi + 1], bl
+
+mov bl, [esi + 5]
+xchg [esi + 9], bl
+mov [esi + 5], bl
+
+mov bl, [esi + 9]
+xchg [esi + 13], bl
+mov [esi + 9], bl
+
+; row 2
+mov bl, [esi + 2]
+xchg [esi + 10], bl
+mov [esi + 2], bl
+
+mov bl, [esi + 6]
+xchg [esi + 14], bl
+mov [esi + 6], bl
+
+; row 3
+mov bl, [esi + 15]
+xchg [esi + 11], bl
+mov [esi + 15], bl
+
+mov bl, [esi + 11]
+xchg [esi + 7], bl
+mov [esi + 11], bl
+
+mov bl, [esi + 7]
+xchg [esi + 3], bl
+mov [esi + 7], bl
+
+ret
+shift_rows ENDP
+
+
+
+
+; ---------------------------
+inv_shift_rows PROC USES ESI EBX
+;
+; inverts the row shifts of the state matrix
+; Receives: nothing
+; Returns: nothing
+; ---------------------------
+
+mov esi, OFFSET state_matrix
+
+; row 1 (starting from row 0)
+mov bl, [esi + 13]
+xchg [esi + 9], bl
+mov [esi + 13], bl
+
+mov bl, [esi + 9]
+xchg [esi + 5], bl
+mov [esi + 9], bl
+
+mov bl, [esi + 5]
+xchg [esi + 1], bl
+mov [esi + 5], bl
+
+; row 2
+mov bl, [esi + 8]
+xchg [esi + 10], bl
+mov [esi + 8], bl
+
+mov bl, [esi + 9]
+xchg [esi + 11], bl
+mov [esi + 9], bl
+
+; row 3
+mov bl, [esi + 3]
+xchg [esi + 7], bl
+mov [esi + 3], bl
+
+mov bl, [esi + 7]
+xchg [esi + 11], bl
+mov [esi + 7], bl
+
+mov bl, [esi + 11]
+xchg [esi + 15], bl
+mov [esi + 11], bl
+
+ret
+inv_shift_rows ENDP
+
+
+
+
+
 ; ---------------------------
 mix_columns PROC
 ;
@@ -204,13 +367,14 @@ mix_columns PROC
 ; but in Galois-Field of 2^8. i.e the multiplication result
 ; remains in 8 bits. The given matrix is in the encryption standard
 ;
-; Receives: state_matrix in data segment
-; Returns: state_matrix after mixing columns
+; Receives: nothing
+; Returns: nothing
+; Modifies: state_matrix and temp_state_matrix in data segment
 ; ---------------------------
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-L1:
+mix_row1:
 	push ecx
 	mov bl, 02h
 	mov cl, [esi]
@@ -226,12 +390,12 @@ L1:
 	inc edi
 	inc esi
 	pop ecx
-	Loop L1
+	Loop mix_row1
 
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-L2:
+mix_row2:
 	push ecx
 	mov dl, [esi]
 	mov bl, 02h
@@ -247,13 +411,13 @@ L2:
 	inc edi
 	inc esi
 	pop ecx
-	Loop L2
+	Loop mix_row2
 
 
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-L3:
+mix_row3:
 	push ecx
 	mov dl, [esi]
 	xor dl, [esi+4]
@@ -269,13 +433,13 @@ L3:
 	inc edi
 	inc esi
 	pop ecx
-	Loop L3
+	Loop mix_row3
 
 
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-L4:
+mix_row4:
 	push ecx
 	mov bl, 03h
 	mov cl, [esi]
@@ -291,7 +455,9 @@ L4:
 	inc edi
 	inc esi
 	pop ecx
-	Loop L4
+	Loop mix_row4
+	
+	call cpy_to_state_matrix
 	
 ret
 mix_columns ENDP
@@ -299,7 +465,167 @@ mix_columns ENDP
 
 
 ; ---------------------------
-gmul PROC
+inv_mix_columns PROC
+;
+; This function performs the column mixing step in the algorithm
+;
+;  [ 0e 0b 0d 09 ]
+;  [ 09 0e 0b 0d ] * state matrix 
+;  [ 0d 09 0e 0b ]
+;  [ 0b 0d 09 0e ]
+;
+; This function essentially performs the above multiplication
+; but in Galois-Field of 2^8. i.e the multiplication result
+; remains in 8 bits. The given matrix is in the encryption standard
+;
+; Receives: state_matrix in data segment
+; Returns: state_matrix after mixing columns
+; ---------------------------
+
+mov esi, OFFSET state_matrix
+mov edi, OFFSET temp_state_matrix
+mov ecx, 4
+inv_mix_row1:
+	push ecx
+	mov bl, 0eh
+	mov cl, [esi]
+	call gmul
+	mov dl, al
+	mov bl, 0bh
+	mov cl, [esi+4]
+	call gmul
+	xor dl, al
+	mov bl, 0dh
+	mov cl, [esi+8]
+	call gmul
+	xor dl, al
+	mov bl, 09h
+	mov cl, [esi+12]
+	call gmul
+	xor dl, al
+	mov [edi], dl
+	inc edi
+	inc esi
+	pop ecx
+	Loop inv_mix_row1
+
+
+
+mov esi, OFFSET state_matrix
+mov edi, OFFSET temp_state_matrix
+mov ecx, 4
+inv_mix_row2:
+	push ecx
+	mov bl, 09h
+	mov cl, [esi]
+	call gmul
+	mov dl, al
+	mov bl, 0eh
+	mov cl, [esi+4]
+	call gmul
+	xor dl, al
+	mov bl, 0bh
+	mov cl, [esi+8]
+	call gmul
+	xor dl, al
+	mov bl, 0dh
+	mov cl, [esi+12]
+	call gmul
+	xor dl, al
+	mov [edi+4], dl
+	inc edi
+	inc esi
+	pop ecx
+	Loop inv_mix_row2
+
+
+mov esi, OFFSET state_matrix
+mov edi, OFFSET temp_state_matrix
+mov ecx, 4
+inv_mix_row3:
+	push ecx
+	mov bl, 0dh
+	mov cl, [esi]
+	call gmul
+	mov dl, al
+	mov bl, 09h
+	mov cl, [esi+4]
+	call gmul
+	xor dl, al
+	mov bl, 0eh
+	mov cl, [esi+8]
+	call gmul
+	xor dl, al
+	mov bl, 0bh
+	mov cl, [esi+12]
+	call gmul
+	xor dl, al
+	mov [edi+8], dl
+	inc edi
+	inc esi
+	pop ecx
+	Loop inv_mix_row3
+
+
+mov esi, OFFSET state_matrix
+mov edi, OFFSET temp_state_matrix
+mov ecx, 4
+inv_mix_row4:
+	push ecx
+	mov bl, 0bh
+	mov cl, [esi]
+	call gmul
+	mov dl, al
+	mov bl, 0dh
+	mov cl, [esi+4]
+	call gmul
+	xor dl, al
+	mov bl, 09h
+	mov cl, [esi+8]
+	call gmul
+	xor dl, al
+	mov bl, 0eh
+	mov cl, [esi+12]
+	call gmul
+	xor dl, al
+	mov [edi+12], dl
+	inc edi
+	inc esi
+	pop ecx
+	Loop inv_mix_row4
+	
+	call cpy_to_state_matrix
+
+ret
+inv_mix_columns ENDP
+
+
+
+
+; ---------------------------
+cpy_to_state_matrix PROC
+;
+; Copies the temp_state_matrix to state_matrix
+; Receives: nothing
+; Returns: nothing
+; ---------------------------
+mov esi, OFFSET state_matrix
+mov edi, OFFSET temp_state_matrix
+mov ecx, 16
+copy_loop:
+	mov bl, [edi]
+	mov [esi], bl
+	inc edi
+	inc esi
+Loop copy_loop
+
+ret
+cpy_to_state_matrix ENDP
+
+
+
+; ---------------------------
+gmul PROC USES EBX ECX
 ; Computes the finite field multiplication of two numbers in GF(2^8)
 ; Using the Russian Peasant Multiplication Algorithm
 ; Receives: BL, CL
