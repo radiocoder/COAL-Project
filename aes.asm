@@ -46,11 +46,11 @@ BYTE 17h, 2bh, 04h, 7eh, 0bah, 77h, 0d6h, 26h, 0e1h, 69h, 14h, 63h, 55h, 21h, 0c
 
 Rconstant BYTE 01h, 02h, 04h, 08h, 10h, 20h, 40h, 80h, 1bh, 36h
 
-key BYTE 2Bh, 7Eh, 15h, 16h, 28h, 0AEh, 0D2h, 0A6h, 0ABh, 0F7h, 15h, 88h, 09h, 0CFh, 4Fh, 3Ch
+key BYTE 00h, 01h, 02h, 03h, 04h, 05h, 06h, 07h, 08h, 09h, 0ah, 0bh, 0ch, 0dh, 0eh, 0fh
 roundkeys BYTE 176 dup(0)
 temp BYTE 4 dup(0)
 
-state_matrix BYTE 32h, 43h, 0f6h, 0a8h, 88h, 5ah, 30h, 8dh, 31h, 31h, 98h, 0a2h, 0e0h, 37h, 07h, 34h
+state_matrix BYTE 00h, 11h, 22h, 33h, 44h, 55h, 66h, 77h, 88h, 99h, 0aah, 0bbh, 0cch, 0ddh, 0eeh, 0ffh
 temp_state_matrix BYTE 16 dup(0)
 
 
@@ -61,11 +61,16 @@ main PROC
 ; Main function that calls other functions
 ; ---------------------------
 call key_expansion
-mov esi, OFFSET roundkeys
-mov ecx, 176
+mov esi, OFFSET state_matrix
+mov ecx, 16
 mov ebx, 1 ; TYPE temp_state_matrix
 call Dumpmem
 call aes_encryption
+mov esi, OFFSET state_matrix
+mov ecx, 16
+mov ebx, 1 ; TYPE temp_state_matrix
+call Dumpmem
+call aes_decryption
 mov esi, OFFSET state_matrix
 mov ecx, 16
 mov ebx, 1 ; TYPE temp_state_matrix
@@ -106,6 +111,38 @@ call add_round_key
 
 ret
 aes_encryption ENDP
+
+
+
+
+; ---------------------------
+aes_decryption PROC
+; Combines all methods to perform the AES decryption
+; Receives: nothing
+; Returns: nothing
+; ---------------------------
+mov ebx, 10
+call add_round_key
+mov ecx, 9
+
+decrypt_rounds:
+	call inv_shift_rows
+	call inv_sub_bytes	
+	dec ebx
+	call add_round_key
+	call inv_mix_columns
+
+Loop decrypt_rounds
+
+call inv_shift_rows
+call inv_sub_bytes
+dec ebx
+call add_round_key
+
+
+ret
+aes_decryption ENDP
+
 
 
 
@@ -242,9 +279,9 @@ key_expansion ENDP
 
 ; ---------------------------
 add_round_key PROC USES EAX EBX ECX EDX ESI EDI
+; Computes the xor of the state matrix with the round key
 ; Receives: ebx = round no e.g 0, 1, 2, ...
 ; Returns: nothing
-; 
 ; ---------------------------
 mov esi, OFFSET roundkeys
 mov edi, OFFSET state_matrix
@@ -298,7 +335,7 @@ sub_bytes ENDP
 
 
 ; ---------------------------
-inv_sub_bytes PROC
+inv_sub_bytes PROC USES EAX EBX ECX EDX ESI ESI
 ; 
 ; Substitute the block bytes to the predefined bytes table
 ; receives: nothing
@@ -321,11 +358,6 @@ inv_sub_bytes ENDP
 
 
 
-
-;Row0: s0  s4  s8  s12   <<< 0 byte
-;Row1: s1  s5  s9  s13   <<< 1 byte
-;Row2: s2  s6  s10 s14   <<< 2 bytes
-;Row3: s3  s7  s11 s15   <<< 3 bytes
 ; ---------------------------
 shift_rows PROC USES EAX EBX ECX EDX ESI EDI
 ;
@@ -403,13 +435,13 @@ xchg [esi + 1], bl
 mov [esi + 5], bl
 
 ; row 2
-mov bl, [esi + 8]
+mov bl, [esi + 2]
 xchg [esi + 10], bl
-mov [esi + 8], bl
+mov [esi + 2], bl
 
-mov bl, [esi + 9]
-xchg [esi + 11], bl
-mov [esi + 9], bl
+mov bl, [esi + 6]
+xchg [esi + 14], bl
+mov [esi + 6], bl
 
 ; row 3
 mov bl, [esi + 3]
@@ -595,20 +627,20 @@ inv_mix_row1:
 	call gmul
 	mov dl, al
 	mov bl, 0bh
-	mov cl, [esi+4]
+	mov cl, [esi+1]
 	call gmul
 	xor dl, al
 	mov bl, 0dh
-	mov cl, [esi+8]
+	mov cl, [esi+2]
 	call gmul
 	xor dl, al
 	mov bl, 09h
-	mov cl, [esi+12]
+	mov cl, [esi+3]
 	call gmul
 	xor dl, al
 	mov [edi], dl
-	inc edi
-	inc esi
+	add edi, 4
+	add esi, 4
 	pop ecx
 	Loop inv_mix_row1
 
@@ -624,20 +656,20 @@ inv_mix_row2:
 	call gmul
 	mov dl, al
 	mov bl, 0eh
-	mov cl, [esi+4]
+	mov cl, [esi+1]
 	call gmul
 	xor dl, al
 	mov bl, 0bh
-	mov cl, [esi+8]
+	mov cl, [esi+2]
 	call gmul
 	xor dl, al
 	mov bl, 0dh
-	mov cl, [esi+12]
+	mov cl, [esi+3]
 	call gmul
 	xor dl, al
-	mov [edi+4], dl
-	inc edi
-	inc esi
+	mov [edi+1], dl
+	add edi, 4
+	add esi, 4
 	pop ecx
 	Loop inv_mix_row2
 
@@ -652,20 +684,20 @@ inv_mix_row3:
 	call gmul
 	mov dl, al
 	mov bl, 09h
-	mov cl, [esi+4]
+	mov cl, [esi+1]
 	call gmul
 	xor dl, al
 	mov bl, 0eh
-	mov cl, [esi+8]
+	mov cl, [esi+2]
 	call gmul
 	xor dl, al
 	mov bl, 0bh
-	mov cl, [esi+12]
+	mov cl, [esi+3]
 	call gmul
 	xor dl, al
-	mov [edi+8], dl
-	inc edi
-	inc esi
+	mov [edi+2], dl
+	add edi, 4
+	add esi, 4
 	pop ecx
 	Loop inv_mix_row3
 
@@ -680,20 +712,20 @@ inv_mix_row4:
 	call gmul
 	mov dl, al
 	mov bl, 0dh
-	mov cl, [esi+4]
+	mov cl, [esi+1]
 	call gmul
 	xor dl, al
 	mov bl, 09h
-	mov cl, [esi+8]
+	mov cl, [esi+2]
 	call gmul
 	xor dl, al
 	mov bl, 0eh
-	mov cl, [esi+12]
+	mov cl, [esi+3]
 	call gmul
 	xor dl, al
-	mov [edi+12], dl
-	inc edi
-	inc esi
+	mov [edi+3], dl
+	add edi, 4
+	add esi, 4
 	pop ecx
 	Loop inv_mix_row4
 	
