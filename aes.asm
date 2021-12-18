@@ -1,4 +1,25 @@
+; Following code is written for implementing of the Advanced Encryption 
+; Standard (AES) in 128 bit with ECB mode of operation. 
+;
+; This code strictly adheres to the standard given by National
+; Institute of Standards and Technology.
+;
+; Authors:
+;	Muhammad Taimoor Zaeem
+;	Nouman Amir
+;	Mian Afrasiyyab Farakh
+;
+; This implementation is in ECB mode of operation and is hence insecure.
+; Do not use this in your security systems.
+;
+;
+; Written in Mircosoft Macro Assembler (MASM) Version: 6.15.8803
+;
+;
+;
 INCLUDE Irvine32.inc
+
+AES_BLOCK_SIZE = 16
 
 .data
 ;----------------------------
@@ -44,6 +65,7 @@ BYTE 0a0h, 0e0h, 3bh, 4dh, 0aeh, 2ah, 0f5h, 0b0h, 0c8h, 0ebh, 0bbh, 3ch, 83h, 53
 BYTE 17h, 2bh, 04h, 7eh, 0bah, 77h, 0d6h, 26h, 0e1h, 69h, 14h, 63h, 55h, 21h, 0ch, 7dh
 ; ---------------------------
 
+; Round constants: used during the key expansion
 Rconstant BYTE 01h, 02h, 04h, 08h, 10h, 20h, 40h, 80h, 1bh, 36h
 
 key BYTE 00h, 01h, 02h, 03h, 04h, 05h, 06h, 07h, 08h, 09h, 0ah, 0bh, 0ch, 0dh, 0eh, 0fh
@@ -53,7 +75,9 @@ temp BYTE 4 dup(0)
 state_matrix BYTE 00h, 11h, 22h, 33h, 44h, 55h, 66h, 77h, 88h, 99h, 0aah, 0bbh, 0cch, 0ddh, 0eeh, 0ffh
 temp_state_matrix BYTE 16 dup(0)
 
-
+message1 BYTE 'Before encryption:', 0
+message2 BYTE 'After encryption:', 0
+message3 BYTE 'After decryption:', 0
 .code
 ; ---------------------------
 main PROC
@@ -61,24 +85,28 @@ main PROC
 ; Main function that calls other functions
 ; ---------------------------
 call key_expansion
+mov edx, OFFSET message1
+call writestring
 mov esi, OFFSET state_matrix
-mov ecx, 16
-mov ebx, 1 ; TYPE temp_state_matrix
+mov ecx, AES_BLOCK_SIZE
+mov ebx, TYPE state_matrix
 call Dumpmem
 call aes_encryption
+mov edx, OFFSET message2
+call writestring
 mov esi, OFFSET state_matrix
-mov ecx, 16
-mov ebx, 1 ; TYPE temp_state_matrix
+mov ecx, AES_BLOCK_SIZE
+mov ebx, TYPE state_matrix
 call Dumpmem
 call aes_decryption
+mov edx, OFFSET message3
+call writestring
 mov esi, OFFSET state_matrix
-mov ecx, 16
-mov ebx, 1 ; TYPE temp_state_matrix
+mov ecx, AES_BLOCK_SIZE
+mov ebx, TYPE state_matrix
 call Dumpmem
 exit
 main ENDP
-
-
 
 
 
@@ -90,19 +118,20 @@ aes_encryption PROC
 ; Receives: nothing
 ; Returns: nothing
 ; ---------------------------
-mov ebx, 0
+mov ebx, 0 ; round number
 call add_round_key
-mov ecx, 9
+mov ecx, 9 ; we do 9 rounds
 
 encrypt_rounds:
 
 	call sub_bytes
 	call shift_rows
 	call mix_columns
-	inc ebx
+	inc ebx ; go to next round
 	call add_round_key
 Loop encrypt_rounds
 
+; the mix_columns is not called in the last round
 call sub_bytes
 call shift_rows
 inc ebx
@@ -115,25 +144,27 @@ aes_encryption ENDP
 
 
 
+
 ; ---------------------------
 aes_decryption PROC
 ; Combines all methods to perform the AES decryption
 ; Receives: nothing
 ; Returns: nothing
 ; ---------------------------
-mov ebx, 10
+mov ebx, 10 ; round number
 call add_round_key
 mov ecx, 9
 
 decrypt_rounds:
 	call inv_shift_rows
 	call inv_sub_bytes	
-	dec ebx
+	dec ebx ; decrement the round number
 	call add_round_key
 	call inv_mix_columns
 
 Loop decrypt_rounds
 
+; the inv_mix_column is not called in the last round
 call inv_shift_rows
 call inv_sub_bytes
 dec ebx
@@ -159,8 +190,8 @@ key_expansion PROC USES EAX EBX ECX EDX ESI EDI
 
 mov edi, OFFSET roundkeys
 mov esi, OFFSET key
-mov ecx, 16
-first_16:
+mov ecx, AES_BLOCK_SIZE
+first_16: ; copy the given 16 bytes straight away
 	mov bl, [esi]
 	mov [edi], bl
 	inc esi
@@ -172,8 +203,8 @@ sub edi, 4
 mov esi, edi ; esi = last4bytes
 pop edi
 mov edx, 0
-mov eax, 0
-rounds:
+mov eax, 0 
+rounds: ; start expanding the key
 	cmp edx, 10
 	jae end_key_expansion
 	mov ecx, OFFSET SUB_BOX
@@ -203,9 +234,7 @@ rounds:
 	pop ebx
 	
 	push edi
-	;sub edi, 4  
-	;mov esi, edi ; esi = last4bytes
-	sub edi, 16
+	sub edi, AES_BLOCK_SIZE ; get the bytes of the last round
 	mov ebx, edi
 	pop edi
 
@@ -213,28 +242,28 @@ rounds:
 	push esi ; to store the temp address
 	mov esi, OFFSET temp
 
-	mov cl, [ebx] ; *roundkeys++ = temp[0] ^ *lastround++;
+	mov cl, [ebx] ; roundkeys = temp[0] xor lastround;
 	xor [esi], cl
 	mov cl, [esi]
 	mov [edi], cl
 	inc ebx
 	inc edi
 
-	mov cl, [ebx] ; *roundkeys++ = temp[1] ^ *lastround++;
+	mov cl, [ebx] ; roundkeys = temp[1] xor lastround;
 	xor [esi+1], cl
 	mov cl, [esi+1]
 	mov [edi], cl
 	inc ebx
 	inc edi
 
-	mov cl, [ebx] ; *roundkeys++ = temp[2] ^ *lastround++;
+	mov cl, [ebx] ; roundkeys = temp[2] xor lastround;
 	xor [esi+2], cl
 	mov cl, [esi+2]
 	mov [edi], cl
 	inc ebx
 	inc edi
 
-	mov cl, [ebx] ; *roundkeys++ = temp[3] ^ *lastround++;
+	mov cl, [ebx] ; roundkeys = temp[3] xor lastround;
 	xor [esi+3], cl
 	mov cl, [esi+3]
 	mov [edi], cl
@@ -253,7 +282,7 @@ mov ecx, 12
 expand_loop:
 
 	push ecx
-	mov cl, [ebx] ; *roundkeys++ = *last4bytes++ ^ *lastround++;
+	mov cl, [ebx] ; roundkeys = last4bytes xor lastround;
 	mov ch, [esi]
 	xor cl, ch
 	mov [edi], cl
@@ -276,7 +305,6 @@ key_expansion ENDP
 
 
 
-
 ; ---------------------------
 add_round_key PROC USES EAX EBX ECX EDX ESI EDI
 ; Computes the xor of the state matrix with the round key
@@ -288,16 +316,16 @@ mov edi, OFFSET state_matrix
 get_round_offset:
 	cmp ebx, 0
 	jz got_round_offset
-	add esi, 16
-	dec ebx
+	add esi, AES_BLOCK_SIZE ; get to roundkeys offset using the round number
+	dec ebx 
 	jmp get_round_offset
 got_round_offset:
 
 
-mov ecx, 16
+mov ecx, AES_BLOCK_SIZE
 add_key_loop:
 	mov bl, [esi]
-	xor [edi], bl
+	xor [edi], bl ; add the round key to the state_matrix
 	inc esi
 	inc edi
 	Loop add_key_loop
@@ -320,10 +348,10 @@ sub_bytes PROC USES EAX EBX ECX EDX ESI EDI
 mov esi, OFFSET state_matrix
 mov edi, OFFSET SUB_BOX
 mov ebx, 0
-mov ecx, 16
+mov ecx, AES_BLOCK_SIZE
 sub_bytes_loop:
 	mov bl, [esi]
-	mov al, [edi + ebx]
+	mov al, [edi + ebx] ; get the corresponding substitute byte
 	mov [esi], al
 	inc esi
 	Loop sub_bytes_loop
@@ -332,6 +360,9 @@ sub_bytes_loop:
 
 ret
 sub_bytes ENDP
+
+
+
 
 
 ; ---------------------------
@@ -344,16 +375,17 @@ inv_sub_bytes PROC USES EAX EBX ECX EDX ESI ESI
 mov esi, OFFSET state_matrix
 mov edi, OFFSET INV_SUB_BOX
 mov ebx, 0
-mov ecx, 16
+mov ecx, AES_BLOCK_SIZE
 inv_sub_bytes_loop:
 	mov bl, [esi]
-	mov al, [edi + ebx]
+	mov al, [edi + ebx] ; get the corresponding substitute byte
 	mov [esi], al
 	inc esi
 	Loop inv_sub_bytes_loop
 ret
 ret
 inv_sub_bytes ENDP
+
 
 
 
@@ -368,7 +400,11 @@ shift_rows PROC USES EAX EBX ECX EDX ESI EDI
 
 mov esi, OFFSET state_matrix
 
-; row 1 (starting from row 0)
+; row 0 is not shifted
+
+; row 1 
+
+; [ s1, s5, s9, s13 ] becomes [ s5, s9, s13, s1 ]
 mov bl, [esi + 1]
 xchg [esi + 5], bl
 mov [esi + 1], bl
@@ -382,6 +418,8 @@ xchg [esi + 13], bl
 mov [esi + 9], bl
 
 ; row 2
+
+; [ s2, s6, s10, s14 ] becomes [ s10, s14, s2, s6 ]
 mov bl, [esi + 2]
 xchg [esi + 10], bl
 mov [esi + 2], bl
@@ -391,6 +429,8 @@ xchg [esi + 14], bl
 mov [esi + 6], bl
 
 ; row 3
+
+; [ s3, s7, s11, s15 ] becomes [ s15, s3, s7, s11 ]
 mov bl, [esi + 15]
 xchg [esi + 11], bl
 mov [esi + 15], bl
@@ -411,6 +451,7 @@ shift_rows ENDP
 
 
 
+
 ; ---------------------------
 inv_shift_rows PROC USES EAX EBX ECX EDX ESI EDI
 ;
@@ -421,7 +462,11 @@ inv_shift_rows PROC USES EAX EBX ECX EDX ESI EDI
 
 mov esi, OFFSET state_matrix
 
-; row 1 (starting from row 0)
+; row 0 is not shifted
+
+; row 1 
+
+; [ s1, s5, s9, s13 ] becomes [ s13, s1, s5, s9 ]
 mov bl, [esi + 13]
 xchg [esi + 9], bl
 mov [esi + 13], bl
@@ -435,6 +480,8 @@ xchg [esi + 1], bl
 mov [esi + 5], bl
 
 ; row 2
+
+; [ s2, s6, s10, s14 ] becomes [ s10, s14, s2, s6 ]
 mov bl, [esi + 2]
 xchg [esi + 10], bl
 mov [esi + 2], bl
@@ -444,6 +491,8 @@ xchg [esi + 14], bl
 mov [esi + 6], bl
 
 ; row 3
+
+; [ s3, s7, s11, s15 ] becomes [ s15, s3, s7, s11 ]
 mov bl, [esi + 3]
 xchg [esi + 7], bl
 mov [esi + 3], bl
@@ -458,6 +507,7 @@ mov [esi + 11], bl
 
 ret
 inv_shift_rows ENDP
+
 
 
 
@@ -483,7 +533,7 @@ mix_columns PROC USES EAX EBX ECX EDX ESI EDI
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-mix_row1:
+mix_row1: ; multiply first row with all columns of the state matrix
 	push ecx
 	mov bl, 02h
 	mov cl, [esi]
@@ -502,7 +552,7 @@ mix_row1:
 	call gmul
 	xor dl, al
 	mov [edi], dl
-	add edi, 4 ;--------------
+	add edi, 4 
 	add esi, 4
 	pop ecx
 	Loop mix_row1
@@ -510,7 +560,7 @@ mix_row1:
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-mix_row2:
+mix_row2: ; multiply second row with all columns of the state matrix
 	push ecx
 	mov bl, 01h
 	mov cl, [esi]
@@ -529,7 +579,7 @@ mix_row2:
 	call gmul
 	xor dl, al
 	mov [edi + 1], dl
-	add edi, 4 ; -------------------------
+	add edi, 4 
 	add esi, 4
 	pop ecx
 	Loop mix_row2
@@ -538,7 +588,7 @@ mix_row2:
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-mix_row3:
+mix_row3: ; multiply third row with all columns of the state matrix
 	push ecx
 	mov bl, 01h
 	mov cl, [esi]
@@ -557,7 +607,7 @@ mix_row3:
 	call gmul
 	xor dl, al
 	mov [edi + 2], dl
-	add edi, 4 ; -------------------
+	add edi, 4 
 	add esi, 4
 	pop ecx
 	Loop mix_row3
@@ -566,7 +616,7 @@ mix_row3:
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-mix_row4:
+mix_row4: ; multiply fourth row with all columns of the state matrix
 	push ecx
 	mov bl, 03h
 	mov cl, [esi]
@@ -599,6 +649,8 @@ mix_columns ENDP
 
 
 
+
+
 ; ---------------------------
 inv_mix_columns PROC USES EAX EBX ECX EDX ESI EDI
 ;
@@ -620,7 +672,7 @@ inv_mix_columns PROC USES EAX EBX ECX EDX ESI EDI
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-inv_mix_row1:
+inv_mix_row1: ; multiply first row with all columns of the state matrix
 	push ecx
 	mov bl, 0eh
 	mov cl, [esi]
@@ -649,7 +701,7 @@ inv_mix_row1:
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-inv_mix_row2:
+inv_mix_row2: ; multiply second row with all columns of the state matrix
 	push ecx
 	mov bl, 09h
 	mov cl, [esi]
@@ -677,7 +729,7 @@ inv_mix_row2:
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-inv_mix_row3:
+inv_mix_row3: ; multiply third row with all columns of the state matrix
 	push ecx
 	mov bl, 0dh
 	mov cl, [esi]
@@ -705,7 +757,7 @@ inv_mix_row3:
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
 mov ecx, 4
-inv_mix_row4:
+inv_mix_row4: ; multiply fourth row with all columns of the state matrix
 	push ecx
 	mov bl, 0bh
 	mov cl, [esi]
@@ -746,8 +798,8 @@ cpy_to_state_matrix PROC USES EAX EBX ECX EDX ESI EDI
 ; ---------------------------
 mov esi, OFFSET state_matrix
 mov edi, OFFSET temp_state_matrix
-mov ecx, 16
-copy_loop:
+mov ecx, AES_BLOCK_SIZE
+copy_loop: ; copy the elements of temp_state_matrix to state_matrix 
 	mov bl, [edi]
 	mov [esi], bl
 	inc edi
@@ -761,6 +813,7 @@ cpy_to_state_matrix ENDP
 
 ; ---------------------------
 gmul PROC USES EBX ECX
+; Reference: https://en.wikipedia.org/wiki/Finite_field_arithmetic
 ; Computes the finite field multiplication of two numbers in GF(2^8)
 ; Using the Russian Peasant Multiplication Algorithm
 ; Receives: BL, CL
