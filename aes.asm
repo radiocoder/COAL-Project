@@ -68,43 +68,61 @@ BYTE 17h, 2bh, 04h, 7eh, 0bah, 77h, 0d6h, 26h, 0e1h, 69h, 14h, 63h, 55h, 21h, 0c
 ; Round constants: used during the key expansion
 Rconstant BYTE 01h, 02h, 04h, 08h, 10h, 20h, 40h, 80h, 1bh, 36h
 
-key BYTE 00h, 01h, 02h, 03h, 04h, 05h, 06h, 07h, 08h, 09h, 0ah, 0bh, 0ch, 0dh, 0eh, 0fh
+key BYTE 00h, 01h, 02h, 03h, 04h, 05h, 06h, 07h, 08h, 09h, 0ah, 0bh, 0ch, 0dh, 0eh, 0fh, 00h
 roundkeys BYTE 176 dup(0)
 temp BYTE 4 dup(0)
 
-state_matrix BYTE 00h, 11h, 22h, 33h, 44h, 55h, 66h, 77h, 88h, 99h, 0aah, 0bbh, 0cch, 0ddh, 0eeh, 0ffh
+state_matrix BYTE 00h, 11h, 22h, 33h, 44h, 55h, 66h, 77h, 88h, 99h, 0aah, 0bbh, 0cch, 0ddh, 0eeh, 0ffh, 00h
 temp_state_matrix BYTE 16 dup(0)
 
-message1 BYTE 'Before encryption:', 0
-message2 BYTE 'After encryption:', 0
-message3 BYTE 'After decryption:', 0
+prompt1 BYTE 'Enter text (16 chars) : ', 0
+prompt2 BYTE 'Enter key (16 chars) :', 0
+message1 BYTE 'After encryption: ', 0
+message2 BYTE 'After decryption: ', 0
 .code
 ; ---------------------------
 main PROC
 ;
 ; Main function that calls other functions
 ; ---------------------------
-call key_expansion
+
+mov edx, OFFSET prompt1
+call writestring
+mov edx, OFFSET state_matrix
+mov ecx, SIZEOF state_matrix
+call ReadString    ; Input the plain text
+mov edx, OFFSET prompt2
+call writestring
+mov edx, OFFSET key
+mov ecx, SIZEOF key
+call ReadString ; Input the key
+call crlf
+
+call key_expansion ;  expand the key
+
+call aes_encryption ; run the encryption algorithm
 mov edx, OFFSET message1
 call writestring
-mov esi, OFFSET state_matrix
-mov ecx, AES_BLOCK_SIZE
-mov ebx, TYPE state_matrix
-call Dumpmem
-call aes_encryption
+mov edx, OFFSET state_matrix
+call writestring ; display the encrypted string
+
+call crlf
+call crlf
+
+mov edx, OFFSET prompt2
+call writestring
+mov edx, OFFSET key
+mov ecx, SIZEOF key
+call ReadString ; Input the key
+call crlf
+
+call key_expansion ;  expand the key
+
+call aes_decryption ; run the decryption algorithm
 mov edx, OFFSET message2
 call writestring
-mov esi, OFFSET state_matrix
-mov ecx, AES_BLOCK_SIZE
-mov ebx, TYPE state_matrix
-call Dumpmem
-call aes_decryption
-mov edx, OFFSET message3
-call writestring
-mov esi, OFFSET state_matrix
-mov ecx, AES_BLOCK_SIZE
-mov ebx, TYPE state_matrix
-call Dumpmem
+mov edx, OFFSET state_matrix
+call writestring ; display the decrypted string
 exit
 main ENDP
 
